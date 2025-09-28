@@ -406,6 +406,7 @@ app.get('/api/hitpro', async (req, res) => {
       const duDoan = generatePrediction(history, modelPredictions);
 
       cachedResult = {
+        Id: latest.Id,
         Phien: latest.Phien,
         Ket_qua: latest.Ket_qua,
         Tong: latest.Tong,
