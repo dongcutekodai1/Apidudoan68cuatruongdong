@@ -5,7 +5,7 @@ const axios = require('axios');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-const API_URL = 'https://api50.onrender.com/history';
+const API_URL = 'https://api50-gyw4.onrender.com/history';
 
 let lastPhien = 0;
 let cachedResult = null;
