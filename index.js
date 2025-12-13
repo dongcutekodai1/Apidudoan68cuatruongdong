@@ -1,10 +1,10 @@
-// HUYDAIXU.SITE - SIMPLE & STABLE ALGORITHM (FIX SERVER ONLY)
+// HUYDAIXU.SITE - SIMPLE & STABLE ALGORITHM (FINAL FIX)
 const express = require('express');
 const axios = require('axios');
 
 const app = express();
 
-// ⚠️ Render BẮT BUỘC dùng process.env.PORT
+// Render bắt buộc dùng PORT env
 const PORT = process.env.PORT || 10000;
 
 const API_URL = 'https://api50-gyw4.onrender.com/history';
@@ -96,44 +96,49 @@ app.get('/', (req, res) => {
 app.get('/api/hitpro', async (req, res) => {
   try {
     const response = await axios.get(API_URL);
-    const data = response.data;
+
+    // FIX FORMAT + FIELD
+    const data = Array.isArray(response.data)
+      ? response.data
+      : response.data?.data;
 
     if (!Array.isArray(data) || data.length === 0) {
-      return res.status(404).json({ error: 'Không có dữ liệu trả về từ API' });
+      return res.status(404).json({
+        error: 'Không có dữ liệu trả về từ API'
+      });
     }
-
-    const latest50 = data.slice(0, 50).reverse(); // Lấy 50 kết quả mới nhất (mới ở cuối)
-    const pattern = latest50.map(item => item.Ket_qua === 'Tài' ? 'T' : 'X').join('');
 
     const latest = data[0];
 
     if (latest.Phien !== lastPhien) {
       lastPhien = latest.Phien;
 
-      // ✳️ Tạo mảng lịch sử chuẩn cho AI
       const history = data
-        .slice(0, 100) // Lấy tối đa 100 phiên gần nhất
-        .reverse()     // Phiên cũ ở đầu
+        .slice(0, 100)
+        .reverse()
         .map(item => ({
           session: item.Phien,
-          result: item.Ket_qua,
-          totalScore: item.Tong
+          result: item.Ket_qua || item.ket_qua,
+          totalScore: item.Tong || item.tong
         }));
 
-      // 🧠 Gọi AI để dự đoán
-      const duDoan = generatePrediction(history, modelPredictions);
+      const duDoan = generatePrediction(history);
+
+      const pattern = history
+        .slice(-20)
+        .map(h => (h.result === 'Tài' ? 'T' : 'X'))
+        .join('');
 
       cachedResult = {
-        Id: latest.Id,
         Phien: latest.Phien,
-        Ket_qua: latest.Ket_qua,
-        Tong: latest.Tong,
-        Xuc_xac_1: latest.Xuc_xac_1,
-        Xuc_xac_2: latest.Xuc_xac_2,
-        Xuc_xac_3: latest.Xuc_xac_3,
+        Ket_qua: latest.Ket_qua || latest.ket_qua,
+        Tong: latest.Tong || latest.tong,
+        Xuc_xac_1: latest.Xuc_xac_1 || latest.xuc_xac_1,
+        Xuc_xac_2: latest.Xuc_xac_2 || latest.xuc_xac_2,
+        Xuc_xac_3: latest.Xuc_xac_3 || latest.xuc_xac_3,
         Pattern: pattern,
-        phien_tiep_theo: latest.Phien + 1,
-        Du_doan: duDoan // ✅ Dự đoán từ AI
+        Phien_tiep_theo: latest.Phien + 1,
+        Du_doan: duDoan
       };
     }
 
@@ -150,11 +155,10 @@ app.get('/api/hitpro', async (req, res) => {
    START SERVER (FIXED)
 ======================= */
 
-// 🔥 Fix triệt để lỗi EADDRINUSE trên Render
 if (!global.__serverStarted) {
   global.__serverStarted = true;
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`✅ Server running on port ${PORT}`);
   });
-}
+  }
