@@ -1,16 +1,11 @@
-// HUYDAIXU.SITE - SIMPLE & STABLE ALGORITHM (FINAL FINAL)
+// HUYDAIXU.SITE - SIMPLE & STABLE (NO CACHE - HARD FIX)
 const express = require('express');
 const axios = require('axios');
 
 const app = express();
-
-// Render bắt buộc dùng PORT env
 const PORT = process.env.PORT || 10000;
 
 const API_URL = 'https://api50-gyw4.onrender.com/history';
-
-let lastPhien = null;
-let cachedResult = null;
 
 /* =======================
    CORE ANALYSIS FUNCTIONS
@@ -57,31 +52,19 @@ function generatePrediction(history) {
 
   const info = analyzeHistory(history);
 
-  // A. Chuỗi dài → bẻ
-  if (info.streak >= 6) {
-    return info.last === 'Tài' ? 'Xỉu' : 'Tài';
-  }
+  if (info.streak >= 6) return info.last === 'Tài' ? 'Xỉu' : 'Tài';
+  if (info.streak >= 3 && info.streak < 6) return info.last;
 
-  // B. Chuỗi vừa → theo
-  if (info.streak >= 3 && info.streak < 6) {
-    return info.last;
-  }
+  const short = detectShortPattern(history);
+  if (short === 1) return 'Tài';
+  if (short === 2) return 'Xỉu';
 
-  // C. Cầu ngắn
-  const shortPattern = detectShortPattern(history);
-  if (shortPattern === 1) return 'Tài';
-  if (shortPattern === 2) return 'Xỉu';
-
-  // D. Lệch mạnh → cân
   if (info.taiCount >= 14) return 'Xỉu';
   if (info.xiuCount >= 14) return 'Tài';
 
-  // E. Đảo cầu nhiều
-  if (info.switches >= 12) {
+  if (info.switches >= 12)
     return info.last === 'Tài' ? 'Xỉu' : 'Tài';
-  }
 
-  // F. Mặc định
   return info.last;
 }
 
@@ -102,63 +85,65 @@ app.get('/api/hitpro', async (req, res) => {
       : response.data?.data;
 
     if (!Array.isArray(data) || data.length === 0) {
-      return res.status(404).json({
-        error: 'Không có dữ liệu trả về từ API'
+      return res.json({
+        ok: false,
+        reason: 'API không có mảng dữ liệu',
+        raw: response.data
+      });
+    }
+
+    // 🔥 MAP ĐÚNG JSON MÀY GỬI
+    const history = data
+      .slice(0, 100)
+      .reverse()
+      .map(item => ({
+        session: item.Phien,
+        result: item.ket_qua || item.Ket_qua,
+        totalScore: item.tong || item.Tong
+      }))
+      .filter(x => x.result); // lọc null cho chắc
+
+    if (history.length < 5) {
+      return res.json({
+        ok: false,
+        reason: 'Không đủ lịch sử để phân tích',
+        historyLength: history.length
       });
     }
 
     const latest = data[0];
+    const duDoan = generatePrediction(history);
 
-    // 🔥 FIX DỨT ĐIỂM CACHE
-    if (!cachedResult || latest.Phien !== lastPhien) {
-      lastPhien = latest.Phien;
+    const pattern = history
+      .slice(-20)
+      .map(h => (h.result === 'Tài' ? 'T' : 'X'))
+      .join('');
 
-      const history = data
-        .slice(0, 100)
-        .reverse()
-        .map(item => ({
-          session: item.Phien,
-          result: item.Ket_qua || item.ket_qua,
-          totalScore: item.Tong || item.tong
-        }));
+    return res.json({
+      ok: true,
+      Phien: latest.Phien,
+      Ket_qua: latest.ket_qua || latest.Ket_qua,
+      Tong: latest.tong || latest.Tong,
+      Xuc_xac_1: latest.xuc_xac_1,
+      Xuc_xac_2: latest.xuc_xac_2,
+      Xuc_xac_3: latest.xuc_xac_3,
+      Pattern: pattern,
+      Phien_tiep_theo: latest.Phien + 1,
+      Du_doan: duDoan
+    });
 
-      const duDoan = generatePrediction(history);
-
-      const pattern = history
-        .slice(-20)
-        .map(h => (h.result === 'Tài' ? 'T' : 'X'))
-        .join('');
-
-      cachedResult = {
-        Phien: latest.Phien,
-        Ket_qua: latest.Ket_qua || latest.ket_qua,
-        Tong: latest.Tong || latest.tong,
-        Xuc_xac_1: latest.Xuc_xac_1 || latest.xuc_xac_1,
-        Xuc_xac_2: latest.Xuc_xac_2 || latest.xuc_xac_2,
-        Xuc_xac_3: latest.Xuc_xac_3 || latest.xuc_xac_3,
-        Pattern: pattern,
-        Phien_tiep_theo: latest.Phien + 1,
-        Du_doan: duDoan
-      };
-    }
-
-    res.json(cachedResult);
   } catch (err) {
-    res.status(500).json({
-      error: 'Lỗi server',
-      message: err.message
+    return res.json({
+      ok: false,
+      error: err.message
     });
   }
 });
 
 /* =======================
-   START SERVER (RENDER SAFE)
+   START SERVER
 ======================= */
 
-if (!global.__serverStarted) {
-  global.__serverStarted = true;
-
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`✅ Server running on port ${PORT}`);
-  });
-     }
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`✅ Server running on port ${PORT}`);
+});
