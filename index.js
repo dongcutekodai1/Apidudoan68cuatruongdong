@@ -1,4 +1,4 @@
-// HUYDAIXU.SITE
+// HUYDAIXU.SITE - SIMPLE & STABLE ALGORITHM
 const express = require('express');
 const axios = require('axios');
 
@@ -10,106 +10,143 @@ const API_URL = 'https://api50-gyw4.onrender.com/history';
 let lastPhien = 0;
 let cachedResult = null;
 
-let modelPredictions = {}; 
+/* =======================
+   CORE ANALYSIS FUNCTIONS
+======================= */
 
-// ====== Dán toàn bộ khối thuật toán AI vào đây ======
-// (bắt đầu từ `detectStreakAndBreak(...)` cho đến `generatePrediction(...)`)
-//
-// 👇👇👇👇👇👇👇👇👇👇👇👇👇👇
-// ✂️ DÁN Ở ĐÂY ✂️
-// Helper function: Detect streak and break probability
-function detectStreakAndBreak(history) {
-  if (!history || history.length === 0) return { streak: 0, currentResult: null, breakProb: 0.0 };
-  let streak = 1;
-  const currentResult = history[history.length - 1].result;
-  for (let i = history.length - 2; i >= 0; i--) {
-    if (history[i].result === currentResult) {
-      streak++;
-    } else {
-      break;
-    }
-  }
-  const last15 = history.slice(-15).map(h => h.result);
-  if (!last15.length) return { streak, currentResult, breakProb: 0.0 };
-  const switches = last15.slice(1).reduce((count, curr, idx) => count + (curr !== last15[idx] ? 1 : 0), 0);
-  const taiCount = last15.filter(r => r === 'Tài').length;
-  const xiuCount = last15.filter(r => r === 'Xỉu').length;
-  const imbalance = Math.abs(taiCount - xiuCount) / last15.length;
-  let breakProb = 0.0;
-
-  if (streak >= 8) {
-    breakProb = Math.min(0.6 + (switches / 15) + imbalance * 0.15, 0.9); // Giảm breakProb
-  } else if (streak >= 5) {
-    breakProb = Math.min(0.35 + (switches / 10) + imbalance * 0.25, 0.85); // Giảm breakProb
-  } else if (streak >= 3 && switches >= 7) { // Tăng ngưỡng switches
-    breakProb = 0.3;
-  }
-
-  return { streak, currentResult, breakProb };
-}
-
-// Helper function: Evaluate model performance
-function evaluateModelPerformance(history, modelName, lookback = 10) {
-  if (!modelPredictions[modelName] || history.length < 2) return 1.0;
-  lookback = Math.min(lookback, history.length - 1);
-  let correctCount = 0;
-  for (let i = 0; i < lookback; i++) {
-    const pred = modelPredictions[modelName][history[history.length - (i + 2)].session] || 0;
-    const actual = history[history.length - (i + 1)].result;
-    if ((pred === 1 && actual === 'Tài') || (pred === 2 && actual === 'Xỉu')) {
-      correctCount++;
-    }
-  }
-  const performanceScore = lookback > 0 ? 1.0 + (correctCount - lookback / 2) / (lookback / 2) : 1.0;
-  return Math.max(0.5, Math.min(1.5, performanceScore)); // Giới hạn score để tránh lệch
-}
-
-// Helper function: Smart bridge break model
-function smartBridgeBreak(history) {
-  if (!history || history.length < 3) return { prediction: 0, breakProb: 0.0, reason: 'Không đủ dữ liệu để bẻ cầu' };
-
-  const { streak, currentResult, breakProb } = detectStreakAndBreak(history);
+function analyzeHistory(history) {
   const last20 = history.slice(-20).map(h => h.result);
-  const lastScores = history.slice(-20).map(h => h.totalScore || 0);
-  let breakProbability = breakProb;
-  let reason = '';
+  const last = last20[last20.length - 1];
 
-  // Analyze score trends
-  const avgScore = lastScores.reduce((sum, score) => sum + score, 0) / (lastScores.length || 1);
-  const scoreDeviation = lastScores.reduce((sum, score) => sum + Math.abs(score - avgScore), 0) / (lastScores.length || 1);
-
-  // Detect specific bridge patterns
-  const last5 = last20.slice(-5);
-  const patternCounts = {};
-  for (let i = 0; i <= last20.length - 3; i++) {
-    const pattern = last20.slice(i, i + 3).join(',');
-    patternCounts[pattern] = (patternCounts[pattern] || 0) + 1;
-  }
-  const mostCommonPattern = Object.entries(patternCounts).sort((a, b) => b[1] - a[1])[0];
-  const isStablePattern = mostCommonPattern && mostCommonPattern[1] >= 3;
-
-  // Adjust break probability based on streak length and patterns
-  if (streak >= 6) {
-    breakProbability = Math.min(breakProbability + 0.15, 0.9); // Giảm ảnh hưởng
-    reason = `[Bẻ Cầu] Chuỗi ${streak} ${currentResult} dài, khả năng bẻ cầu cao`;
-  } else if (streak >= 4 && scoreDeviation > 3) {
-    breakProbability = Math.min(breakProbability + 0.1, 0.85); // Giảm ảnh hưởng
-    reason = `[Bẻ Cầu] Biến động điểm số lớn (${scoreDeviation.toFixed(1)}), khả năng bẻ cầu tăng`;
-  } else if (isStablePattern && last5.every(r => r === currentResult)) {
-    breakProbability = Math.min(breakProbability + 0.05, 0.8); // Giảm ảnh hưởng
-    reason = `[Bẻ Cầu] Phát hiện mẫu lặp ${mostCommonPattern[0]}, có khả năng bẻ cầu`;
-  } else {
-    breakProbability = Math.max(breakProbability - 0.15, 0.15); // Giảm xác suất bẻ cầu
-    reason = `[Bẻ Cầu] Không phát hiện mẫu bẻ cầu mạnh, tiếp tục theo cầu`;
+  let streak = 1;
+  for (let i = last20.length - 2; i >= 0; i--) {
+    if (last20[i] === last) streak++;
+    else break;
   }
 
-  // Decide prediction based on break probability
-  let prediction = breakProbability > 0.65 ? (currentResult === 'Tài' ? 2 : 1) : (currentResult === 'Tài' ? 1 : 2); // Tăng ngưỡng breakProb
-  return { prediction, breakProb: breakProbability, reason };
+  const taiCount = last20.filter(x => x === 'Tài').length;
+  const xiuCount = last20.length - taiCount;
+
+  let switches = 0;
+  for (let i = 1; i < last20.length; i++) {
+    if (last20[i] !== last20[i - 1]) switches++;
+  }
+
+  return { last, streak, taiCount, xiuCount, switches };
 }
 
-// Helper function: Trend and probability model
-function trendAndProb(history) {
+function detectShortPattern(history) {
+  if (history.length < 4) return 0;
+
+  const p = history.slice(-4).map(h => h.result).join(',');
+
+  if (p === 'Tài,Xỉu,Tài,Xỉu') return 2;
+  if (p === 'Xỉu,Tài,Xỉu,Tài') return 1;
+  if (p === 'Tài,Tài,Xỉu,Xỉu') return 1;
+  if (p === 'Xỉu,Xỉu,Tài,Tài') return 2;
+
+  return 0;
+}
+
+function generatePrediction(history) {
+  if (history.length < 5) {
+    return Math.random() < 0.5 ? 'Tài' : 'Xỉu';
+  }
+
+  const info = analyzeHistory(history);
+
+  // A. Chuỗi dài → bẻ
+  if (info.streak >= 6) {
+    return info.last === 'Tài' ? 'Xỉu' : 'Tài';
+  }
+
+  // B. Chuỗi vừa → theo
+  if (info.streak >= 3 && info.streak < 6) {
+    return info.last;
+  }
+
+  // C. Cầu ngắn
+  const shortPattern = detectShortPattern(history);
+  if (shortPattern === 1) return 'Tài';
+  if (shortPattern === 2) return 'Xỉu';
+
+  // D. Lệch mạnh → cân
+  if (info.taiCount >= 14) return 'Xỉu';
+  if (info.xiuCount >= 14) return 'Tài';
+
+  // E. Đảo cầu nhiều
+  if (info.switches >= 12) {
+    return info.last === 'Tài' ? 'Xỉu' : 'Tài';
+  }
+
+  // F. Mặc định
+  return info.last;
+}
+
+/* =======================
+   ROUTES
+======================= */
+
+app.get('/', (req, res) => {
+  res.send('SERVER ALIVE');
+});
+
+app.get('/api/hitpro', async (req, res) => {
+  try {
+    const response = await axios.get(API_URL);
+    const data = response.data;
+
+    if (!Array.isArray(data) || data.length === 0) {
+      return res.status(404).json({ error: 'Không có dữ liệu API' });
+    }
+
+    const latest = data[0];
+
+    if (latest.Phien !== lastPhien) {
+      lastPhien = latest.Phien;
+
+      const history = data
+        .slice(0, 100)
+        .reverse()
+        .map(item => ({
+          session: item.Phien,
+          result: item.Ket_qua,
+          totalScore: item.Tong
+        }));
+
+      const duDoan = generatePrediction(history);
+
+      const pattern = history
+        .slice(-20)
+        .map(h => h.result === 'Tài' ? 'T' : 'X')
+        .join('');
+
+      cachedResult = {
+        Phien: latest.Phien,
+        Ket_qua: latest.Ket_qua,
+        Tong: latest.Tong,
+        Xuc_xac_1: latest.Xuc_xac_1,
+        Xuc_xac_2: latest.Xuc_xac_2,
+        Xuc_xac_3: latest.Xuc_xac_3,
+        Pattern: pattern,
+        Phien_tiep_theo: latest.Phien + 1,
+        Du_doan: duDoan
+      };
+    }
+
+    res.json(cachedResult || { error: 'Chưa có dữ liệu mới' });
+
+  } catch (err) {
+    res.status(500).json({
+      error: 'Lỗi server',
+      message: err.message
+    });
+  }
+});
+
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});function trendAndProb(history) {
   if (!history || history.length < 3) return 0;
   const { streak, currentResult, breakProb } = detectStreakAndBreak(history);
   if (streak >= 5) {
