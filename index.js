@@ -1,15 +1,21 @@
-// HUYDAIXU.SITE - SIMPLE & STABLE (NO CACHE - HARD FIX)
 const express = require('express');
 const axios = require('axios');
 
 const app = express();
 const PORT = process.env.PORT || 10000;
 
-const API_URL = 'https://api50-gyw4.onrender.com/history';
+// ✅ API CHỈ TRẢ 1 PHIÊN
+const API_URL = 'https://api68-6tko.onrender.com/history';
 
-/* =======================
-   CORE ANALYSIS FUNCTIONS
-======================= */
+let lastPhien = null;
+let cachedResult = null;
+
+// ✅ LƯU LỊCH SỬ TRONG RAM
+let history = [];
+
+/* =====================
+   THUẬT TOÁN CŨ (GIỮ)
+===================== */
 
 function analyzeHistory(history) {
   const last20 = history.slice(-20).map(h => h.result);
@@ -32,19 +38,6 @@ function analyzeHistory(history) {
   return { last, streak, taiCount, xiuCount, switches };
 }
 
-function detectShortPattern(history) {
-  if (history.length < 4) return 0;
-
-  const p = history.slice(-4).map(h => h.result).join(',');
-
-  if (p === 'Tài,Xỉu,Tài,Xỉu') return 2;
-  if (p === 'Xỉu,Tài,Xỉu,Tài') return 1;
-  if (p === 'Tài,Tài,Xỉu,Xỉu') return 1;
-  if (p === 'Xỉu,Xỉu,Tài,Tài') return 2;
-
-  return 0;
-}
-
 function generatePrediction(history) {
   if (history.length < 5) {
     return Math.random() < 0.5 ? 'Tài' : 'Xỉu';
@@ -52,97 +45,87 @@ function generatePrediction(history) {
 
   const info = analyzeHistory(history);
 
-  if (info.streak >= 6) return info.last === 'Tài' ? 'Xỉu' : 'Tài';
-  if (info.streak >= 3 && info.streak < 6) return info.last;
+  if (info.streak >= 6) {
+    return info.last === 'Tài' ? 'Xỉu' : 'Tài';
+  }
 
-  const short = detectShortPattern(history);
-  if (short === 1) return 'Tài';
-  if (short === 2) return 'Xỉu';
+  if (info.streak >= 3) {
+    return info.last;
+  }
 
   if (info.taiCount >= 14) return 'Xỉu';
   if (info.xiuCount >= 14) return 'Tài';
 
-  if (info.switches >= 12)
+  if (info.switches >= 12) {
     return info.last === 'Tài' ? 'Xỉu' : 'Tài';
+  }
 
   return info.last;
 }
 
-/* =======================
+/* =====================
    ROUTES
-======================= */
+===================== */
 
 app.get('/', (req, res) => {
-  res.send('SERVER ALIVE');
+  res.send('SERVER OK');
 });
 
 app.get('/api/hitpro', async (req, res) => {
   try {
     const response = await axios.get(API_URL);
+    const data = response.data;
 
-    const data = Array.isArray(response.data)
-      ? response.data
-      : response.data?.data;
-
-    if (!Array.isArray(data) || data.length === 0) {
+    // ❌ không có phiên
+    if (!data || !data.Phien) {
       return res.json({
         ok: false,
-        reason: 'API không có mảng dữ liệu',
-        raw: response.data
+        reason: 'API không có dữ liệu hợp lệ',
+        raw: data
       });
     }
 
-    // 🔥 MAP ĐÚNG JSON MÀY GỬI
-    const history = data
-      .slice(0, 100)
-      .reverse()
-      .map(item => ({
-        session: item.Phien,
-        result: item.ket_qua || item.Ket_qua,
-        totalScore: item.tong || item.Tong
-      }))
-      .filter(x => x.result); // lọc null cho chắc
+    // ✅ chỉ xử lý khi có phiên mới
+    if (data.Phien !== lastPhien) {
+      lastPhien = data.Phien;
 
-    if (history.length < 5) {
-      return res.json({
-        ok: false,
-        reason: 'Không đủ lịch sử để phân tích',
-        historyLength: history.length
+      history.push({
+        session: data.Phien,
+        result: data.ket_qua,
+        total: data.tong
       });
+
+      if (history.length > 50) history.shift();
+
+      const duDoan = generatePrediction(history);
+
+      cachedResult = {
+        ok: true,
+        Phien: data.Phien,
+        Ket_qua: data.ket_qua,
+        Tong: data.tong,
+        Xuc_xac_1: data.xuc_xac_1,
+        Xuc_xac_2: data.xuc_xac_2,
+        Xuc_xac_3: data.xuc_xac_3,
+        Phien_tiep_theo: data.Phien + 1,
+        Du_doan: duDoan
+      };
     }
 
-    const latest = data[0];
-    const duDoan = generatePrediction(history);
-
-    const pattern = history
-      .slice(-20)
-      .map(h => (h.result === 'Tài' ? 'T' : 'X'))
-      .join('');
-
-    return res.json({
-      ok: true,
-      Phien: latest.Phien,
-      Ket_qua: latest.ket_qua || latest.Ket_qua,
-      Tong: latest.tong || latest.Tong,
-      Xuc_xac_1: latest.xuc_xac_1,
-      Xuc_xac_2: latest.xuc_xac_2,
-      Xuc_xac_3: latest.xuc_xac_3,
-      Pattern: pattern,
-      Phien_tiep_theo: latest.Phien + 1,
-      Du_doan: duDoan
-    });
+    res.json(cachedResult);
 
   } catch (err) {
-    return res.json({
+    res.status(500).json({
       ok: false,
-      error: err.message
+      error: 'Lỗi server',
+      message: err.message
     });
   }
 });
 
-/* =======================
+/* =====================
    START SERVER
-======================= */
+===================== */
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`✅ Server running on port ${PORT}`);
