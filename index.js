@@ -111,8 +111,8 @@ app.get('/api/hitpro', async (req, res) => {
         .reverse()
         .map(item => ({
           session: item.Phien,
-          result: item.Ket_qua,
-          totalScore: item.Tong
+          result: item.ket_qua,
+          totalScore: item.tong
         }));
 
       const duDoan = generatePrediction(history);
