@@ -1,4 +1,4 @@
-// HUYDAIXU.SITE - SIMPLE & STABLE ALGORITHM (FINAL FIX)
+// HUYDAIXU.SITE - SIMPLE & STABLE ALGORITHM (FINAL FINAL)
 const express = require('express');
 const axios = require('axios');
 
@@ -9,7 +9,7 @@ const PORT = process.env.PORT || 10000;
 
 const API_URL = 'https://api50-gyw4.onrender.com/history';
 
-let lastPhien = 0;
+let lastPhien = null;
 let cachedResult = null;
 
 /* =======================
@@ -97,7 +97,6 @@ app.get('/api/hitpro', async (req, res) => {
   try {
     const response = await axios.get(API_URL);
 
-    // FIX FORMAT + FIELD
     const data = Array.isArray(response.data)
       ? response.data
       : response.data?.data;
@@ -110,7 +109,8 @@ app.get('/api/hitpro', async (req, res) => {
 
     const latest = data[0];
 
-    if (latest.Phien !== lastPhien) {
+    // 🔥 FIX DỨT ĐIỂM CACHE
+    if (!cachedResult || latest.Phien !== lastPhien) {
       lastPhien = latest.Phien;
 
       const history = data
@@ -142,7 +142,7 @@ app.get('/api/hitpro', async (req, res) => {
       };
     }
 
-    res.json(cachedResult || { error: 'Chưa có dữ liệu mới' });
+    res.json(cachedResult);
   } catch (err) {
     res.status(500).json({
       error: 'Lỗi server',
@@ -152,7 +152,7 @@ app.get('/api/hitpro', async (req, res) => {
 });
 
 /* =======================
-   START SERVER (FIXED)
+   START SERVER (RENDER SAFE)
 ======================= */
 
 if (!global.__serverStarted) {
@@ -161,4 +161,4 @@ if (!global.__serverStarted) {
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`✅ Server running on port ${PORT}`);
   });
-  }
+     }
