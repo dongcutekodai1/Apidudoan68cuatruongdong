@@ -95,34 +95,36 @@ app.get('/', (req, res) => {
 
 app.get('/api/hitpro', async (req, res) => {
   try {
-    const { data } = await axios.get(API_URL);
+    const response = await axios.get(API_URL);
+    const data = response.data;
 
     if (!Array.isArray(data) || data.length === 0) {
-      return res.status(404).json({ error: 'Không có dữ liệu API' });
+      return res.status(404).json({ error: 'Không có dữ liệu trả về từ API' });
     }
+
+    const latest50 = data.slice(0, 50).reverse(); // Lấy 50 kết quả mới nhất (mới ở cuối)
+    const pattern = latest50.map(item => item.Ket_qua === 'Tài' ? 'T' : 'X').join('');
 
     const latest = data[0];
 
     if (latest.Phien !== lastPhien) {
       lastPhien = latest.Phien;
 
+      // ✳️ Tạo mảng lịch sử chuẩn cho AI
       const history = data
-        .slice(0, 100)
-        .reverse()
+        .slice(0, 100) // Lấy tối đa 100 phiên gần nhất
+        .reverse()     // Phiên cũ ở đầu
         .map(item => ({
           session: item.Phien,
-          result: item.ket_qua,
-          totalScore: item.tong
+          result: item.Ket_qua,
+          totalScore: item.Tong
         }));
 
-      const duDoan = generatePrediction(history);
-
-      const pattern = history
-        .slice(-20)
-        .map(h => (h.result === 'Tài' ? 'T' : 'X'))
-        .join('');
+      // 🧠 Gọi AI để dự đoán
+      const duDoan = generatePrediction(history, modelPredictions);
 
       cachedResult = {
+        Id: latest.Id,
         Phien: latest.Phien,
         Ket_qua: latest.Ket_qua,
         Tong: latest.Tong,
@@ -130,8 +132,8 @@ app.get('/api/hitpro', async (req, res) => {
         Xuc_xac_2: latest.Xuc_xac_2,
         Xuc_xac_3: latest.Xuc_xac_3,
         Pattern: pattern,
-        Phien_tiep_theo: latest.Phien + 1,
-        Du_doan: duDoan
+        phien_tiep_theo: latest.Phien + 1,
+        Du_doan: duDoan // ✅ Dự đoán từ AI
       };
     }
 
